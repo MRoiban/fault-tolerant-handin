@@ -1,0 +1,208 @@
+<!--
+  Variable gadget of the NP-hardness proof (paper, Section 5.1, Lemmas 3–5).
+  A ring of 3m unit discs, each meeting only its two neighbours on either side. Every disc
+  must be 2-stabbed (hold two points). Points snap to the spots q_j where three consecutive
+  discs C_j, C_{j+1}, C_{j+2} meet; a spot can hold two points (they may coincide).
+  With the budget of 2m points there are exactly six solutions: three encode true, three
+  false (with the paper's indexing). The paper then adds three constraint discs per
+  variable to leave three (Fig. 8); that step is not drawn here.
+  Settings: m (default 2, so 6 discs).
+  In the document: #figure(widget("variable-ring", m: 2), caption: [...]) <fig-ring>
+-->
+<svg class="plot" viewBox="0 0 600 380" role="img" aria-label="A ring of discs; place points so that every disc holds two">
+    <g class="discs"></g>
+    <g class="counts"></g>
+    <g class="spots"></g>
+</svg>
+<div class="controls">
+    <label><span class="mi">𝑚</span> <input type="range" name="m" min="2" max="4" step="1" value="2"> <output name="m"></output></label>
+    <button type="button" name="clear">Clear</button>
+    <button type="button" name="solution">Show a solution</button>
+    <button type="button" name="why">Why 2𝑚?</button>
+</div>
+<p class="readout"></p>
+<p class="readout why" hidden></p>
+
+<script>
+// solver:start
+/** Ring geometry for r = 3m discs: centres on a circle of radius R, disc radius rho chosen
+ *  so a disc meets its neighbours at distance 1 and 2 around the ring but not 3. Spot j
+ *  is the midpoint of the centres of discs j and j+2: it lies in C_j, C_{j+1}, C_{j+2}. */
+function ringGeometry(m, cx = 0, cy = 0, R = 1) {
+    const r = 3 * m;
+    const centre = (i) => {
+        const a = (2 * Math.PI * i) / r - Math.PI / 2;
+        return { x: cx + R * Math.cos(a), y: cy + R * Math.sin(a) };
+    };
+    const chord = (s) => 2 * R * Math.sin((Math.PI * s) / r);
+    const rho = (chord(2) + chord(3)) / 4; // 2·rho strictly between the distances to i±2 and i±3
+    const centres = Array.from({ length: r }, (_, i) => centre(i));
+    const spots = centres.map((c, j) => {
+        const d = centres[(j + 2) % r];
+        return { x: (c.x + d.x) / 2, y: (c.y + d.y) / 2 };
+    });
+    return { r, rho, centres, spots };
+}
+
+/** How many points each disc holds, given counts[j] points on spot j (spot j covers
+ *  discs j, j+1, j+2, so disc i is covered by spots i−2, i−1, i). */
+function discCounts(counts) {
+    const r = counts.length;
+    return counts.map((_, i) => counts[i] + counts[(i - 1 + r) % r] + counts[(i - 2 + r) % r]);
+}
+
+/** Every placement of exactly `budget` points on the spots (at most 2 per spot) that
+ *  2-stabs every disc. */
+function solutions(r, budget) {
+    const out = [];
+    const counts = new Array(r).fill(0);
+    const rec = (j, left) => {
+        if (j === r) {
+            if (left === 0 && discCounts(counts).every((c) => c >= 2)) out.push([...counts]);
+            return;
+        }
+        for (let c = 0; c <= Math.min(2, left); c++) {
+            counts[j] = c;
+            rec(j + 1, left - c);
+        }
+        counts[j] = 0;
+    };
+    rec(0, budget);
+    return out;
+}
+
+/** The truth value a solution encodes, with the paper's indexing (Figs. 5 and 6):
+ *  doubled points on q_j, q_{j+3}, …: j = 0 or 1 is true, j = 2 false;
+ *  single points on q_j, q_{j+1}, q_{j+3}, q_{j+4}, …: j = 0 is true, j = 1 or 2 false. */
+function encodes(counts) {
+    const doubled = counts.findIndex((c) => c === 2);
+    if (doubled >= 0) return { doubled: true, j: doubled % 3, value: doubled % 3 !== 2 };
+    const empty = counts.findIndex((c) => c === 0); // the residue class left empty is j + 2
+    const j = (((empty - 2) % 3) + 3) % 3;
+    return { doubled: false, j, value: j === 0 };
+}
+// solver:end
+
+const svg = root.querySelector('svg');
+const NS = 'http://www.w3.org/2000/svg';
+const el = (name, attrs, text) => {
+    const e = document.createElementNS(NS, name);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (text !== undefined) e.textContent = text;
+    return e;
+};
+const mIn = root.querySelector('input[name=m]');
+const mOut = root.querySelector('output[name=m]');
+mIn.value = String(Math.min(4, Math.max(2, Number(root.dataset.m ?? 2))));
+
+let geom = null;
+let RING_R = 100;
+let counts = [];
+let shown = -1; // which solution "Show a solution" last showed
+let sols = [];
+
+function reset() {
+    const m = Number(mIn.value);
+    // Fit the ring and its count labels in the drawing: extent = R + rho + label room.
+    const ratio = ringGeometry(m).rho;
+    RING_R = 162 / (1 + ratio);
+    geom = ringGeometry(m, 300, 190, RING_R);
+    counts = new Array(geom.r).fill(0);
+    sols = solutions(geom.r, 2 * m);
+    shown = -1;
+    draw();
+}
+
+const unit = () => Math.max(1, (600 / (svg.clientWidth || 600)) * 0.85);
+
+function draw() {
+    const u = unit();
+    const m = Number(mIn.value);
+    mOut.value = m;
+    const per = discCounts(counts);
+    const used = counts.reduce((a, b) => a + b, 0);
+
+    const discs = svg.querySelector('.discs');
+    discs.replaceChildren();
+    geom.centres.forEach((c, i) => {
+        // A disc's stroke says how far it is from done: hairline 0, dashed 1, solid 2.
+        const k = Math.min(per[i], 2);
+        // Outlines only: the discs overlap a lot, so fills would merge into one blob.
+        discs.append(el('circle', {
+            cx: c.x, cy: c.y, r: geom.rho, fill: 'none',
+            stroke: k >= 2 ? 'var(--role-client)' : k === 1 ? 'var(--ink)' : 'var(--rule)',
+            'stroke-width': k >= 2 ? 1.5 : 0.9,
+            'stroke-dasharray': k === 1 ? '4 3' : 'none',
+        }));
+    });
+    const labels = svg.querySelector('.counts');
+    labels.replaceChildren();
+    geom.centres.forEach((c, i) => {
+        // The count sits outside the ring, on the disc's own radius.
+        const dx = c.x - 300;
+        const dy = c.y - 190;
+        const len = Math.hypot(dx, dy);
+        const k = Math.min(per[i], 2);
+        const out = RING_R + geom.rho + 9 + 3 * u;
+        labels.append(el('text', {
+            x: 300 + (dx / len) * out, y: 190 + (dy / len) * out + 4 * u,
+            'text-anchor': 'middle', 'font-size': 13 * u,
+            fill: k >= 2 ? 'var(--role-client)' : 'var(--muted)',
+        }, String(per[i])));
+    });
+
+    const spots = svg.querySelector('.spots');
+    spots.replaceChildren();
+    geom.spots.forEach((s, j) => {
+        const g = el('g', { class: 'spot', 'data-j': j, transform: `translate(${s.x} ${s.y})`, style: 'cursor:pointer' });
+        g.append(el('circle', { class: 'hit', r: 16 * u, fill: 'transparent' }));
+        g.append(el('circle', { r: 2.2 * u, fill: 'var(--muted)' }));
+        const size = 9 * u;
+        for (let p = 0; p < counts[j]; p++) {
+            // Two points on one spot coincide; drawn side by side so you can count them.
+            g.append(el('rect', { class: 'facility', x: (p - counts[j] / 2) * (size + 1.5 * u), y: -size / 2, width: size, height: size }));
+        }
+        spots.append(g);
+    });
+
+    const solvedNow = per.every((c) => c >= 2);
+    let status;
+    if (used > 2 * m) status = `over the budget of ${2 * m}`;
+    else if (solvedNow && used === 2 * m) {
+        const e = encodes(counts);
+        status = `every disc holds two, with the budget: this placement encodes <b>${e.value ? 'true' : 'false'}</b>`;
+    } else if (solvedNow) status = 'every disc holds two';
+    else status = `${per.filter((c) => c >= 2).length} of ${geom.r} discs hold two`;
+    root.querySelector('.readout').innerHTML =
+        `<span class="sc">Points</span> <b>${used}</b> of <b>${2 * m}</b> <span class="sep">·</span> ${status}`;
+}
+
+svg.addEventListener('click', (e) => {
+    const s = e.target.closest('.spot');
+    if (!s) return;
+    const j = Number(s.dataset.j);
+    counts[j] = (counts[j] + 1) % 3; // 0 → 1 → 2 (coinciding) → 0
+    draw();
+});
+mIn.addEventListener('input', reset);
+root.querySelector('button[name=clear]').addEventListener('click', () => {
+    counts = new Array(geom.r).fill(0);
+    draw();
+});
+root.querySelector('button[name=solution]').addEventListener('click', () => {
+    shown = (shown + 1) % sols.length;
+    counts = [...sols[shown]];
+    draw();
+    const e = encodes(counts);
+    root.querySelector('.readout').innerHTML +=
+        ` <span class="sep">·</span> solution ${shown + 1} of ${sols.length} (${e.doubled ? 'coinciding pairs' : 'single points'})`;
+});
+root.querySelector('button[name=why]').addEventListener('click', () => {
+    const why = root.querySelector('.why');
+    why.hidden = !why.hidden;
+    const m = Number(mIn.value);
+    why.innerHTML = `Each point lies in at most three discs, and the ${3 * m} discs need two points each: ${6 * m} hits in all. So at least ${6 * m} ÷ 3 = <b>${2 * m}</b> points. With exactly ${2 * m}, every point must hit three discs and every disc gets exactly two (Lemma 3).`;
+});
+new ResizeObserver(() => draw()).observe(svg);
+reset();
+</script>

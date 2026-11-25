@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="theme-color" content="#f4e9d8" />
+        <title>Fault-Tolerant k-Centre</title>
+        <link
+            rel="icon"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a9d8f'/%3E%3Cpath d='M36 8 18 36h12l-4 20 20-30H34z' fill='%23fff'/%3E%3C/svg%3E"
+        />
+        <style>
+            :root {
+                --ink: #3b2f24;
+                --muted: #7a6a58;
+                --card: rgba(255, 250, 242, 0.88);
+                --line: rgba(120, 92, 60, 0.18);
+                --teal: #1f8a7d;
+                --red: #d7263d;
+                --gold: #e9a23b;
+                color-scheme: light;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            [hidden] {
+                display: none !important;
+            }
+            html,
+            body {
+                margin: 0;
+                height: 100%;
+                overflow: hidden;
+                background: #f4e9d8;
+                color: var(--ink);
+                font:
+                    14px/1.35 system-ui,
+                    -apple-system,
+                    "Segoe UI",
+                    Roboto,
+                    sans-serif;
+                overscroll-behavior: none;
+            }
+            #stage {
+                position: fixed;
+                inset: 0;
+            }
+            #stage canvas {
+                display: block;
+                width: 100%;
+                height: 100%;
+                user-select: none;
+                -webkit-user-select: none;
+            }
+            .card {
+                pointer-events: auto;
+                background: var(--card);
+                border: 1px solid var(--line);
+                border-radius: 14px;
+                box-shadow: 0 6px 20px rgba(90, 60, 30, 0.12);
+                backdrop-filter: blur(6px);
+                -webkit-backdrop-filter: blur(6px);
+            }
+            button {
+                font: inherit;
+                font-weight: 600;
+                color: var(--ink);
+                background: #fff;
+                border: 1px solid var(--line);
+                border-radius: 10px;
+                padding: 0 12px;
+                min-height: 34px;
+                min-width: 34px;
+                cursor: pointer;
+            }
+            button:hover {
+                background: #fff8ee;
+            }
+            /* Kenney Game Icons, drawn in the text colour (see src/icons.ts). */
+            .icon {
+                display: inline-block;
+                flex: none;
+                width: 1.15em;
+                height: 1.15em;
+                vertical-align: -0.22em;
+                background-color: currentColor;
+                -webkit-mask: var(--icon) center / contain no-repeat;
+                mask: var(--icon) center / contain no-repeat;
+            }
+            .icon + .label,
+            .label + .icon {
+                margin-left: 0.4em;
+            }
+            button:focus-visible {
+                outline: 2px solid var(--teal);
+                outline-offset: 2px;
+            }
+            button:disabled {
+                opacity: 0.45;
+                cursor: default;
+            }
+            i.math {
+                font-family: Georgia, "Times New Roman", serif;
+                font-size: 1.12em;
+            }
+
+            /* Top centre: "goal vs you", with the actions under it. Everything else is in bubbles or the pause screen. */
+            .top {
+                position: fixed;
+                top: 10px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: min(500px, calc(100% - 140px));
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 8px;
+                pointer-events: none;
+            }
+            .strip {
+                width: 100%;
+                padding: 8px 14px 9px;
+            }
+            .strip-head {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                font-size: 12px;
+                color: var(--muted);
+            }
+            .strip-head .lvl {
+                font-weight: 650;
+                color: var(--ink);
+            }
+            .chip {
+                padding: 1px 7px;
+                border-radius: 999px;
+                background: rgba(31, 138, 125, 0.12);
+                color: var(--teal);
+                font-weight: 650;
+            }
+            .help {
+                margin-left: auto;
+                min-height: 22px;
+                min-width: 22px;
+                padding: 0;
+                border-radius: 50%;
+                font-size: 12px;
+                line-height: 1;
+            }
+            .vs {
+                display: grid;
+                grid-template-columns: auto 1fr auto;
+                align-items: end;
+                gap: 12px;
+                margin-top: 4px;
+            }
+            .side {
+                display: flex;
+                flex-direction: column;
+            }
+            .side.goal {
+                text-align: right;
+            }
+            .side .k {
+                font-size: 11px;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: var(--muted);
+                white-space: nowrap;
+            }
+            .side .k i.math {
+                text-transform: none;
+            }
+            .side .v {
+                font-size: 24px;
+                font-weight: 700;
+                font-variant-numeric: tabular-nums;
+                white-space: nowrap;
+                line-height: 1.1;
+            }
+            #you {
+                color: var(--red);
+            }
+            .now {
+                font-size: 13px;
+                font-weight: 650;
+            }
+            #you.better {
+                animation: better 0.7s ease-out;
+            }
+            @keyframes better {
+                0% {
+                    color: var(--teal);
+                }
+                100% {
+                    color: var(--red);
+                }
+            }
+            .strip.celebrate {
+                animation: goal-pulse 0.9s ease-out;
+            }
+            @keyframes goal-pulse {
+                0% {
+                    box-shadow:
+                        0 0 0 0 rgba(233, 162, 59, 0.75),
+                        0 6px 20px rgba(90, 60, 30, 0.12);
+                }
+                100% {
+                    box-shadow:
+                        0 0 0 16px rgba(233, 162, 59, 0),
+                        0 6px 20px rgba(90, 60, 30, 0.12);
+                }
+            }
+            @media (prefers-reduced-motion: reduce) {
+                #you.better,
+                .strip.celebrate,
+                .bubble-card.pop {
+                    animation: none;
+                }
+            }
+            .now.ok {
+                color: var(--teal);
+            }
+            .now.bad {
+                color: var(--red);
+            }
+            #goalv {
+                color: var(--ink);
+            }
+            .meter {
+                height: 8px;
+                margin-bottom: 8px;
+                border-radius: 999px;
+                background: rgba(122, 106, 88, 0.15);
+                overflow: hidden;
+            }
+            .meter i {
+                display: block;
+                height: 100%;
+                width: 0;
+                border-radius: inherit;
+                background: var(--gold);
+                transition: width 0.25s ease-out;
+            }
+            .strip.won .meter i {
+                background: var(--teal);
+            }
+            .strip.won #goalv {
+                color: var(--teal);
+            }
+            .sub {
+                margin: 5px 0 0;
+                font-size: 13px;
+                color: var(--muted);
+                text-align: center;
+            }
+            .sub:empty {
+                display: none;
+            }
+            .sub.ok {
+                color: var(--teal);
+                font-weight: 600;
+            }
+            .sub.bad {
+                color: var(--red);
+                font-weight: 600;
+            }
+            .sub.warn {
+                color: #8a5300;
+                font-weight: 600;
+            }
+            .actions {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 6px;
+                pointer-events: auto;
+            }
+            .actions button {
+                box-shadow: 0 4px 14px rgba(90, 60, 30, 0.1);
+            }
+            #ghost[aria-pressed="true"] {
+                background: #fbe8cc;
+                border-color: #e3b46a;
+            }
+            #bot[aria-pressed="true"] {
+                background: #ece6ff;
+                border-color: #b9a8f5;
+            }
+            .next {
+                background: var(--teal);
+                border-color: var(--teal);
+                color: #fff;
+            }
+            .next:hover {
+                background: #18786c;
+            }
+            .pausebtn {
+                position: fixed;
+                top: 10px;
+                left: 10px;
+                font-size: 20px;
+                padding: 0 8px;
+                box-shadow: 0 4px 14px rgba(90, 60, 30, 0.1);
+            }
+            .mutebtn {
+                left: 56px;
+            }
+            /* Only shown when the game runs inside an iframe (see main.ts). */
+            .fsbtn {
+                left: auto;
+                right: 10px;
+            }
+
+            /* Pause screen (Esc): Resume / Levels / Settings, and the legend bottom left. */
+            .overlay {
+                position: fixed;
+                inset: 0;
+                z-index: 10;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 28px;
+                padding: 24px;
+                background: rgba(244, 233, 216, 0.82);
+                backdrop-filter: blur(8px);
+                -webkit-backdrop-filter: blur(8px);
+            }
+            .pause-menu {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                width: 240px;
+            }
+            .pause-menu button {
+                min-height: 46px;
+                font-size: 16px;
+            }
+            .pause-menu h2,
+            .settings h2 {
+                margin: 0 0 6px;
+                text-align: center;
+                font-size: 22px;
+            }
+            .settings {
+                width: 340px;
+                padding: 18px;
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            .settings label {
+                display: flex;
+                gap: 10px;
+                align-items: flex-start;
+                font-size: 14px;
+                cursor: pointer;
+            }
+            .settings label small {
+                display: block;
+                color: var(--muted);
+            }
+            .settings input {
+                margin-top: 3px;
+                accent-color: var(--teal);
+            }
+            .settings .row {
+                display: flex;
+                gap: 8px;
+                justify-content: space-between;
+            }
+            .legend {
+                position: fixed;
+                left: 16px;
+                bottom: 16px;
+                display: flex;
+                flex-direction: column;
+                gap: 5px;
+                padding: 12px 14px;
+                font-size: 13px;
+            }
+            .legend h3 {
+                margin: 0 0 2px;
+                font-size: 12px;
+                text-transform: uppercase;
+                letter-spacing: 0.06em;
+                color: var(--muted);
+            }
+            .legend h3:not(:first-child) {
+                margin-top: 8px;
+            }
+            .legend span {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .legend kbd {
+                font:
+                    600 11px/1 system-ui,
+                    sans-serif;
+                padding: 2px 5px;
+                border: 1px solid var(--line);
+                border-radius: 4px;
+                background: #fff;
+            }
+            .sw {
+                display: inline-block;
+                flex: none;
+                width: 14px;
+                height: 10px;
+                border-radius: 2px;
+            }
+            .sw.house {
+                background: #d7263d;
+            }
+            .sw.line {
+                height: 3px;
+                background: #d7263d;
+            }
+            .sw.ring {
+                height: 14px;
+                border-radius: 50%;
+                border: 2px solid #1f8a7d;
+                background: rgba(31, 138, 125, 0.12);
+            }
+            .sw.broken {
+                background: #5b544c;
+            }
+            .sw.best {
+                background: rgba(217, 130, 28, 0.55);
+            }
+            .sw.bot {
+                background: rgba(107, 79, 216, 0.5);
+            }
+            .sw.proof {
+                height: 14px;
+                border-radius: 50%;
+                border: 2px solid #d9821c;
+                background: rgba(217, 130, 28, 0.2);
+            }
+            .house-label {
+                position: fixed;
+                left: 0;
+                top: 0;
+                z-index: 4;
+                pointer-events: none;
+                padding: 3px 8px;
+                border-radius: 8px;
+                background: rgba(59, 47, 36, 0.88);
+                color: #fff;
+                font-size: 12px;
+                font-weight: 600;
+                white-space: nowrap;
+            }
+            /* Speech bubble on the board: #bubble sits exactly on the anchor point. */
+            .bubble {
+                position: fixed;
+                left: 0;
+                top: 0;
+                width: 0;
+                height: 0;
+                z-index: 5;
+                pointer-events: none;
+            }
+            .bubble-card.pop {
+                animation: bubble-pop 0.25s ease-out;
+            }
+            @keyframes bubble-pop {
+                from {
+                    opacity: 0;
+                    translate: 0 6px;
+                }
+                to {
+                    opacity: 1;
+                    translate: 0 0;
+                }
+            }
+            .bubble-card {
+                position: absolute;
+                width: 300px;
+                pointer-events: auto;
+                background: #fffaf2;
+                border: 1px solid rgba(215, 38, 61, 0.35);
+                border-radius: 14px;
+                box-shadow: 0 10px 28px rgba(90, 40, 20, 0.22);
+                padding: 12px 14px 10px;
+            }
+            /* The tail is a small rotated square on the card's edge; bubble.ts places and turns it. */
+            .bubble-tail {
+                position: absolute;
+                width: 14px;
+                height: 14px;
+                margin: -7px 0 0 -7px;
+                background: #fffaf2;
+                border-right: 1px solid rgba(215, 38, 61, 0.35);
+                border-bottom: 1px solid rgba(215, 38, 61, 0.35);
+                transform: rotate(var(--tail-turn, 45deg));
+            }
+            .bubble-text {
+                margin: 0 18px 10px 0;
+                font-size: 14px;
+                line-height: 1.4;
+            }
+            .bubble-feedback {
+                margin: -4px 0 10px;
+                padding: 6px 8px;
+                border-radius: 8px;
+                background: rgba(31, 138, 125, 0.1);
+                font-size: 13px;
+                line-height: 1.35;
+            }
+            .bubble-choices {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 6px;
+                margin: 0 0 10px;
+            }
+            .bubble-choices button {
+                min-height: 32px;
+                padding: 0 12px;
+                border-color: var(--teal);
+                color: var(--teal);
+            }
+            .bubble-do {
+                font-size: 12px;
+                font-weight: 650;
+                color: var(--teal);
+            }
+            .bubble-nav {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            .bubble-nav button {
+                min-height: 30px;
+                padding: 0 12px;
+            }
+            .bubble-count {
+                margin-right: auto;
+                font-size: 12px;
+                color: var(--muted);
+                font-variant-numeric: tabular-nums;
+            }
+            .bubble-close {
+                position: absolute;
+                top: 6px;
+                right: 6px;
+                min-width: 26px;
+                min-height: 26px;
+                padding: 0;
+                border: 0;
+                background: transparent;
+                font-size: 18px;
+                line-height: 1;
+                color: var(--muted);
+            }
+            /* Start menu: a grid of levels over a blurred board. */
+            body.menu-open .top,
+            body.menu-open .pausebtn,
+            body.menu-open .bubble,
+            body.paused .top,
+            body.paused .pausebtn,
+            body.paused .bubble,
+            body.menu-open .house-label,
+            body.paused .house-label {
+                visibility: hidden;
+            }
+            .menu-title {
+                margin: 0;
+                font-size: 34px;
+                font-weight: 750;
+                letter-spacing: -0.02em;
+            }
+            .menu-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 200px));
+                gap: 16px;
+                justify-content: center;
+                width: 100%;
+                max-width: 848px;
+            }
+            .overlay.menu {
+                overflow-y: auto;
+                justify-content: safe center;
+            }
+            .tile {
+                position: relative;
+                display: flex;
+                flex-direction: column;
+                align-items: flex-start;
+                justify-content: space-between;
+                height: 140px;
+                padding: 16px;
+                text-align: left;
+                border-radius: 16px;
+                background: var(--card);
+                border: 1px solid var(--line);
+                box-shadow: 0 6px 20px rgba(90, 60, 30, 0.12);
+            }
+            .tile:hover:not(:disabled) {
+                background: #fff;
+                transform: translateY(-2px);
+            }
+            .tile:disabled {
+                opacity: 0.55;
+                cursor: not-allowed;
+                box-shadow: none;
+            }
+            .tile-n {
+                font-size: 40px;
+                font-weight: 750;
+                line-height: 1;
+                color: var(--teal);
+            }
+            .tile:disabled .tile-n {
+                color: var(--muted);
+            }
+            .tile-name {
+                font-size: 15px;
+                font-weight: 650;
+            }
+            .tile-mark {
+                position: absolute;
+                top: 14px;
+                right: 14px;
+                font-size: 22px;
+                font-weight: 700;
+                color: var(--teal);
+            }
+            .tile:disabled .tile-mark {
+                color: var(--muted);
+            }
+            .tile.done {
+                border-color: rgba(31, 138, 125, 0.45);
+            }
+            #nogl {
+                position: fixed;
+                inset: 0;
+                display: none;
+                place-items: center;
+                padding: 24px;
+                text-align: center;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="stage"></div>
+
+        <div class="top" id="hud">
+            <section class="card strip" id="strip" aria-live="polite">
+                <div class="strip-head">
+                    <span class="lvl" id="leveltitle"></span>
+                    <span
+                        class="chip"
+                        id="lchip"
+                        title="Every house needs ℓ chargers within radius r, so ℓ − 1 of them can fail"
+                        hidden
+                    ></span>
+                    <button
+                        type="button"
+                        class="help"
+                        id="why"
+                        title="Explain (H)"
+                        aria-label="Explain"
+                        data-icon="question"
+                    ></button>
+                </div>
+                <div class="vs">
+                    <div class="side you">
+                        <span class="k" id="youk"
+                            >Your radius <i class="math">r</i></span
+                        ><span class="v"
+                            ><span id="you">–</span>
+                            <small class="now" id="younow" hidden></small
+                        ></span>
+                    </div>
+                    <div class="meter" aria-hidden="true">
+                        <i id="meter"></i>
+                    </div>
+                    <div class="side goal">
+                        <span class="k" id="goalk">Goal</span
+                        ><span class="v" id="goalv">–</span>
+                    </div>
+                </div>
+                <p class="sub" id="sub"></p>
+            </section>
+            <div class="actions">
+                <button
+                    type="button"
+                    id="ghost"
+                    aria-pressed="false"
+                    data-icon="star"
+                >
+                    Show best
+                </button>
+                <button
+                    type="button"
+                    id="step"
+                    title="Place the next charger(s) on the farthest house for me (S)"
+                    hidden
+                    data-icon="fastForward"
+                >
+                    Show me
+                </button>
+                <button
+                    type="button"
+                    id="test"
+                    title="Break each charger in turn, step by step (T)"
+                    hidden
+                    data-icon="warning"
+                >
+                    Test failures
+                </button>
+                <button
+                    type="button"
+                    id="proof"
+                    title="Why farthest-first is never worse than 2 × the best radius r* (W)"
+                    hidden
+                    data-icon="information"
+                >
+                    Why ≤ 2×?
+                </button>
+                <button
+                    type="button"
+                    id="bot"
+                    title="Reveal the bot (B)"
+                    hidden
+                    data-icon="multiplayer"
+                >
+                    Bot
+                </button>
+                <button
+                    type="button"
+                    id="new"
+                    title="New random town (N)"
+                    hidden
+                    data-icon="plus"
+                >
+                    New
+                </button>
+                <button
+                    type="button"
+                    id="reset"
+                    title="Reset chargers (R)"
+                    data-icon="return"
+                >
+                    Reset
+                </button>
+                <button
+                    type="button"
+                    class="next"
+                    id="nextlevel"
+                    hidden
+                    data-icon="arrowRight"
+                    data-icon-after
+                >
+                    Next level
+                </button>
+            </div>
+        </div>
+        <button
+            type="button"
+            class="pausebtn"
+            id="pausebtn"
+            title="Menu (Esc)"
+            aria-label="Menu"
+            data-icon="menuList"
+        ></button>
+        <button
+            type="button"
+            class="pausebtn mutebtn"
+            id="mute"
+            aria-label="Sound"
+            aria-pressed="false"
+        ></button>
+
+        <button
+            type="button"
+            class="pausebtn fsbtn"
+            id="fullscreen"
+            title="Fullscreen"
+            aria-label="Fullscreen"
+            hidden
+            data-icon="larger"
+        ></button>
+
+        <div class="overlay" id="pause" hidden>
+            <div class="pause-menu" id="pause-menu">
+                <h2>Paused</h2>
+                <button type="button" id="resume" data-icon="right">
+                    Resume
+                </button>
+                <button type="button" id="levels" data-icon="menuGrid">
+                    Levels
+                </button>
+                <button type="button" id="settings-open" data-icon="gear">
+                    Settings
+                </button>
+            </div>
+            <div class="card settings" id="settings" hidden>
+                <h2>Settings</h2>
+                <label
+                    ><input type="checkbox" id="set-briefing" />
+                    <span
+                        >Explain each level when it starts<small
+                            >A bubble with the level's task; the ? button always
+                            reopens it.</small
+                        ></span
+                    ></label
+                >
+                <label
+                    ><input type="checkbox" id="set-unlock" />
+                    <span
+                        >Unlock all levels<small
+                            >For teachers: open any level without finishing the
+                            one before.</small
+                        ></span
+                    ></label
+                >
+                <div class="row">
+                    <button type="button" id="set-reset">Reset progress</button>
+                    <button type="button" id="settings-back">Back</button>
+                </div>
+            </div>
+            <div class="card legend" aria-label="Legend">
+                <h3>Legend</h3>
+                <span><i class="sw house"></i>worst-off house</span>
+                <span><i class="sw line"></i>its distance = radius r</span>
+                <span><i class="sw ring"></i>radius r around a charger</span>
+                <span><i class="sw broken"></i>broken charger</span>
+                <span><i class="sw best"></i>a best placement (Show best)</span>
+                <span><i class="sw bot"></i>the bot's placement</span>
+                <span
+                    ><i class="sw proof"></i>disc of radius r/2 (Why ≤
+                    2×?)</span
+                >
+                <h3>Controls</h3>
+                <span
+                    >Drag a charger to move it; drag a stack's bottom charger to
+                    move the stack</span
+                >
+                <span>Click a charger to break / repair it (levels 3+)</span>
+                <span
+                    ><kbd>Esc</kbd> menu · <kbd>R</kbd> reset ·
+                    <kbd>O</kbd> show best · <kbd>H</kbd> explain</span
+                >
+            </div>
+        </div>
+
+        <div id="house-labels"></div>
+        <div class="bubble" id="bubble" hidden>
+            <div class="bubble-card" role="dialog" aria-label="Explanation">
+                <span class="bubble-tail" aria-hidden="true"></span>
+                <button
+                    type="button"
+                    class="bubble-close"
+                    id="bubble-close"
+                    title="Close (Esc)"
+                    aria-label="Close"
+                >
+                    ×
+                </button>
+                <p class="bubble-text" id="bubble-text" aria-live="polite"></p>
+                <p
+                    class="bubble-feedback"
+                    id="bubble-feedback"
+                    aria-live="polite"
+                    hidden
+                ></p>
+                <div class="bubble-choices" id="bubble-choices" hidden></div>
+                <div class="bubble-nav">
+                    <span class="bubble-count" id="bubble-count"></span>
+                    <span class="bubble-do" id="bubble-do" hidden
+                        >Your move</span
+                    >
+                    <button type="button" id="bubble-back" title="Previous (←)">
+                        Back
+                    </button>
+                    <button type="button" id="bubble-next" title="Next (→)">
+                        Next
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="overlay menu" id="menu" hidden>
+            <h1 class="menu-title">Fault-tolerant k-centre</h1>
+            <div class="menu-grid" id="menu-grid"></div>
+        </div>
+        <div id="nogl">
+            This page needs WebGL. Try a current Chrome, Firefox, Safari or
+            Edge.
+        </div>
+
+        <script type="module" src="/src/main.ts"></script>
+    </body>
+</html>

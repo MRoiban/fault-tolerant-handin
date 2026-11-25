@@ -1,0 +1,172 @@
+<!--
+  One dimension, exactly (the paper's Theorem 2): on a line, ℓ copies of an optimal
+  ⌊k/ℓ⌋-centre are an optimal ℓ-fault-tolerant k-centre.
+
+  A widget is plain HTML plus one <script>. The build wraps the script so `root` is this
+  widget's own element (two widgets on a page never collide), and styles the native
+  controls (input, button, output, label) and the SVG classes below in Incipit's look.
+  Colours come from CSS variables: var(--role-client), var(--role-facility), var(--ink)…
+  Settings given in the document, e.g. {widget=one-d n=9}, arrive as root.dataset.n.
+-->
+<svg class="plot" viewBox="0 0 600 150" role="img" aria-label="Clients on a line, the facilities and their radius">
+    <line class="axis" x1="20" x2="580" y1="96" y2="96" />
+    <g class="cover"></g>
+    <g class="facilities"></g>
+    <g class="clients"></g>
+</svg>
+<div class="controls">
+    <label><span class="mi role-facility">𝑘</span> <input type="range" name="k" min="1" max="10" step="1" value="4"> <output name="k"></output></label>
+    <label><span class="mi role-tolerance">ℓ</span> <input type="range" name="l" min="1" max="4" step="1" value="2"> <output name="l"></output></label>
+    <button type="button" name="shuffle">New clients</button>
+</div>
+<p class="readout"></p>
+
+<script>
+// solver:start
+/**
+ * Exact Euclidean κ-centre on a line. Sorted, the clients split into κ runs, each served
+ * by one centre at its midpoint, so the radius is half the widest run. The best radius is
+ * one of the half-gaps (x_j − x_i)/2; the greedy check "start a run at the first uncovered
+ * client and take everything within 2r" is exact on a line, so a binary search over the
+ * candidates finds it. Returns { radius, centers } (centers may repeat when κ > n).
+ */
+function kCentre1D(xs, kappa) {
+    const s = [...xs].sort((a, b) => a - b);
+    const runs = (r) => {
+        const out = [];
+        for (let i = 0; i < s.length; ) {
+            let j = i;
+            while (j + 1 < s.length && s[j + 1] - s[i] <= 2 * r + 1e-9) j++;
+            out.push([s[i], s[j]]);
+            i = j + 1;
+        }
+        return out;
+    };
+    const cands = [0];
+    for (let i = 0; i < s.length; i++) for (let j = i + 1; j < s.length; j++) cands.push((s[j] - s[i]) / 2);
+    cands.sort((a, b) => a - b);
+    let lo = 0;
+    let hi = cands.length - 1;
+    while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (runs(cands[mid]).length <= kappa) hi = mid;
+        else lo = mid + 1;
+    }
+    const groups = runs(cands[lo]);
+    const centers = groups.map(([a, b]) => (a + b) / 2);
+    while (centers.length < kappa) centers.push(centers[centers.length - 1]);
+    return { radius: Math.max(0, ...groups.map(([a, b]) => (b - a) / 2)), centers };
+}
+
+/** The paper's algorithm in 1D: ℓ copies of an optimal ⌊k/ℓ⌋-centre. */
+function faultTolerant1D(xs, k, l) {
+    const kPrime = Math.floor(k / l);
+    const { radius, centers } = kCentre1D(xs, kPrime);
+    return { kPrime, radius, centers, spare: k - kPrime * l };
+}
+// solver:end
+
+const svg = root.querySelector('svg');
+const NS = 'http://www.w3.org/2000/svg';
+const X0 = 30;
+const X1 = 570;
+const AXIS = 96;
+const toPx = (x) => X0 + (x / 10) * (X1 - X0);
+const toX = (px) => Math.min(10, Math.max(0, ((px - X0) / (X1 - X0)) * 10));
+const el = (name, attrs) => {
+    const e = document.createElementNS(NS, name);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    return e;
+};
+
+// Clients: a few clusters, so ⌊k/ℓ⌋ centers have something to find.
+let seed = 7;
+const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+const n = Number(root.dataset.n ?? 9);
+let clients = [];
+function newClients() {
+    const clusters = 2 + Math.floor(rand() * 3);
+    const at = Array.from({ length: clusters }, () => 0.8 + rand() * 8.4);
+    clients = Array.from({ length: n }, (_, i) => Math.min(9.8, Math.max(0.2, at[i % clusters] + (rand() - 0.5) * 1.6)));
+}
+
+const [kIn, lIn] = ['k', 'l'].map((name) => root.querySelector(`input[name=${name}]`));
+const [kOut, lOut] = ['k', 'l'].map((name) => root.querySelector(`output[name=${name}]`));
+
+// Markers keep a usable size on small screens: one SVG unit can be under a pixel there.
+const unit = () => Math.max(1, (600 / (svg.clientWidth || 600)) * 0.85);
+
+function draw() {
+    const u = unit();
+    const l = Number(lIn.value);
+    kIn.min = String(l); // ℓ ≤ k
+    if (Number(kIn.value) < l) kIn.value = String(l);
+    const k = Number(kIn.value);
+    kOut.value = k;
+    lOut.value = l;
+    const { kPrime, radius, centers, spare } = faultTolerant1D(clients, k, l);
+
+    const cover = svg.querySelector('.cover');
+    const facilities = svg.querySelector('.facilities');
+    cover.replaceChildren();
+    facilities.replaceChildren();
+    for (const c of centers) {
+        // The radius as a bracket under the axis, as in Incipit's line figures.
+        const a = toPx(c - radius);
+        const b = toPx(c + radius);
+        cover.append(el('path', { class: 'bracket', d: `M${a} ${AXIS + 16 + 6 * u}v-${5 * u}M${a} ${AXIS + 16 + 6 * u}H${b}M${b} ${AXIS + 16 + 6 * u}v-${5 * u}` }));
+        // ℓ facilities stacked on the centre (they coincide; stacked so you can count them).
+        const size = 10 * u;
+        for (let i = 0; i < l; i++) {
+            facilities.append(el('rect', { class: 'facility', x: toPx(c) - size / 2, y: AXIS - 6 * u - size - i * (size + 2 * u), width: size, height: size }));
+        }
+    }
+    const circles = svg.querySelector('.clients');
+    circles.replaceChildren();
+    clients.forEach((x, i) => {
+        const g = el('g', { class: 'client', 'data-i': i, transform: `translate(${toPx(x)} ${AXIS})` });
+        g.append(el('circle', { class: 'hit', r: 22 * u }), el('circle', { class: 'dot', r: 4.5 * u }));
+        circles.append(g);
+    });
+
+    root.querySelector('.readout').innerHTML =
+        `<span class="sc">Best radius</span> <b>${radius.toFixed(2)}</b>` +
+        ` <span class="sep">·</span> <span class="mi role-facility">𝑘</span>′ = ⌊<span class="mi role-facility">𝑘</span>/<span class="mi role-tolerance">ℓ</span>⌋ = ${kPrime} centers, ` +
+        `${l === 1 ? 'one facility' : `${l} facilities`} on each` +
+        (spare ? ` <span class="sep">·</span> ${spare} spare` : '');
+}
+
+// Drag a client along the line (mouse, pen or touch).
+let dragging = null;
+svg.addEventListener('pointerdown', (e) => {
+    const g = e.target.closest('.client');
+    if (!g) return;
+    dragging = Number(g.dataset.i);
+    svg.setPointerCapture(e.pointerId);
+    root.classList.add('dragging');
+});
+svg.addEventListener('pointermove', (e) => {
+    if (dragging === null) return;
+    const p = svg.createSVGPoint();
+    p.x = e.clientX;
+    p.y = e.clientY;
+    clients[dragging] = toX(p.matrixTransform(svg.getScreenCTM().inverse()).x);
+    draw();
+});
+const drop = () => {
+    dragging = null;
+    root.classList.remove('dragging');
+};
+svg.addEventListener('pointerup', drop);
+svg.addEventListener('pointercancel', drop);
+
+kIn.addEventListener('input', draw);
+lIn.addEventListener('input', draw);
+root.querySelector('button[name=shuffle]').addEventListener('click', () => {
+    newClients();
+    draw();
+});
+new ResizeObserver(() => draw()).observe(svg);
+newClients();
+draw();
+</script>

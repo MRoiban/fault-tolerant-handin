@@ -1,0 +1,4 @@
+dist/
+package-lock.json
+report/report.html
+report/source/widgets/

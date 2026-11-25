@@ -1,0 +1,191 @@
+<!--
+  Clause gadget of the NP-hardness proof (paper, Section 5.2, Observation 4, Fig. 10).
+  Four discs: a central disc touching three black discs, each black disc meeting the ring
+  of one literal's variable. The variable's placement already puts points in its black
+  disc: two if the literal is true (t2), one if it is false (f1; the constraint discs of
+  Fig. 8 rule out the empty f0 case). Two more points must 2-stab all four discs. That is
+  possible exactly when at least one literal is true.
+  Drawn schematically: the black discs touch the central disc in one point each, and any
+  point of the plane falls in one of seven regions (centre only, a touching point, a black
+  disc only), so trying every pair of those regions is a complete search.
+  Settings: literals (default "u₁,¬u₂,u₃").
+  In the document: #figure(widget("clause", literals: "u₁,¬u₂,u₃"), caption: [...]) <fig-clause>
+-->
+<svg class="plot" viewBox="0 0 600 330" role="img" aria-label="A clause gadget: a central disc touching three discs, one per literal">
+    <g class="discs"></g>
+    <g class="given"></g>
+    <g class="spots"></g>
+    <g class="names"></g>
+</svg>
+<div class="controls literals"></div>
+<div class="controls">
+    <button type="button" name="clear">Clear</button>
+    <button type="button" name="search">Try every placement</button>
+</div>
+<p class="readout"></p>
+
+<script>
+// solver:start
+/** The seven regions a point can be in, with the discs it stabs there:
+ *  disc 0 is the central disc, discs 1..3 the black discs of the three literals. */
+const REGIONS = [
+    { id: 'centre', discs: [0] },
+    { id: 'touch-1', discs: [0, 1] },
+    { id: 'touch-2', discs: [0, 2] },
+    { id: 'touch-3', discs: [0, 3] },
+    { id: 'black-1', discs: [1] },
+    { id: 'black-2', discs: [2] },
+    { id: 'black-3', discs: [3] },
+];
+
+/** Points per disc: `given` from the variables (2 if the literal is true, 1 if false) plus
+ *  the placed points (an array of region indices, repeats allowed). */
+function clauseCounts(truth, placed) {
+    const counts = [0, ...truth.map((t) => (t ? 2 : 1))];
+    for (const r of placed) for (const d of REGIONS[r].discs) counts[d]++;
+    return counts;
+}
+const stabbed = (counts) => counts.every((c) => c >= 2);
+
+/** Every placement of `extra` points (a multiset of regions) that 2-stabs all four discs. */
+function clauseSolutions(truth, extra = 2) {
+    const out = [];
+    const rec = (from, placed) => {
+        if (placed.length === extra) {
+            if (stabbed(clauseCounts(truth, placed))) out.push([...placed]);
+            return;
+        }
+        for (let r = from; r < REGIONS.length; r++) rec(r, [...placed, r]);
+    };
+    rec(0, []);
+    return out;
+}
+// solver:end
+
+const svg = root.querySelector('svg');
+const NS = 'http://www.w3.org/2000/svg';
+const el = (name, attrs, text) => {
+    const e = document.createElementNS(NS, name);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    if (text !== undefined) e.textContent = text;
+    return e;
+};
+
+const names = String(root.dataset.literals ?? 'u₁,¬u₂,u₃').split(',').map((s) => s.trim()).slice(0, 3);
+while (names.length < 3) names.push(`u${names.length + 1}`);
+let truth = [true, false, false];
+let placed = [];
+let note = '';
+
+// Layout: the central disc, and the black discs touching it at 90°, 210° and 330°.
+// The top disc's top is at C.y − 3·RHO and the lower discs' bottoms at C.y + 2·RHO.
+const C = { x: 300, y: 196 };
+const RHO = 52;
+const angles = [-90, 150, 30].map((a) => (a * Math.PI) / 180);
+const black = angles.map((a) => ({ x: C.x + 2 * RHO * Math.cos(a), y: C.y + 2 * RHO * Math.sin(a) }));
+const touch = angles.map((a) => ({ x: C.x + RHO * Math.cos(a), y: C.y + RHO * Math.sin(a) }));
+const outer = angles.map((a) => ({ x: C.x + 2.55 * RHO * Math.cos(a), y: C.y + 2.55 * RHO * Math.sin(a) }));
+const regionAt = [C, touch[0], touch[1], touch[2], ...black.map((b, i) => ({ x: (b.x + outer[i].x) / 2, y: (b.y + outer[i].y) / 2 }))];
+
+// Literal switches: one per literal, true or false.
+const switches = root.querySelector('.controls.literals');
+names.forEach((n, i) => {
+    const label = document.createElement('label');
+    label.innerHTML = `<input type="checkbox" ${truth[i] ? 'checked' : ''}> <span class="mi">${n}</span> true`;
+    label.querySelector('input').addEventListener('change', (e) => {
+        truth[i] = e.target.checked;
+        note = '';
+        draw();
+    });
+    switches.append(label);
+});
+
+const unit = () => Math.max(1, (600 / (svg.clientWidth || 600)) * 0.85);
+
+function draw() {
+    const u = unit();
+    const counts = clauseCounts(truth, placed);
+    const discs = svg.querySelector('.discs');
+    discs.replaceChildren();
+    const ring = (p, k, isBlack) =>
+        el('circle', {
+            cx: p.x, cy: p.y, r: RHO,
+            fill: k >= 2 ? 'var(--role-client)' : 'none',
+            'fill-opacity': k >= 2 ? 0.08 : 0,
+            stroke: k >= 2 ? 'var(--role-client)' : isBlack ? 'var(--ink)' : 'var(--ink)',
+            'stroke-width': isBlack ? 1.6 : 1,
+            'stroke-dasharray': k === 1 ? '4 3' : 'none',
+        });
+    discs.append(ring(C, counts[0], false));
+    black.forEach((b, i) => discs.append(ring(b, counts[i + 1], true)));
+
+    // The variable's points already in each black disc, drawn as plain dots near its outer edge.
+    const given = svg.querySelector('.given');
+    given.replaceChildren();
+    black.forEach((b, i) => {
+        const k = truth[i] ? 2 : 1;
+        for (let p = 0; p < k; p++) {
+            const a = angles[i] + (p - (k - 1) / 2) * 0.5;
+            given.append(el('circle', { cx: b.x + 0.62 * RHO * Math.cos(a), cy: b.y + 0.62 * RHO * Math.sin(a), r: 4 * u, fill: 'var(--body)' }));
+        }
+    });
+
+    const spots = svg.querySelector('.spots');
+    spots.replaceChildren();
+    regionAt.forEach((s, r) => {
+        const g = el('g', { class: 'spot', 'data-r': r, transform: `translate(${s.x} ${s.y})`, style: 'cursor:pointer' });
+        g.append(el('circle', { r: 16 * u, fill: 'transparent' }), el('circle', { r: 2.2 * u, fill: 'var(--muted)' }));
+        const here = placed.filter((x) => x === r).length;
+        const size = 9 * u;
+        for (let p = 0; p < here; p++) {
+            g.append(el('rect', { class: 'facility', x: (p - here / 2) * (size + 1.5 * u), y: -size / 2, width: size, height: size }));
+        }
+        spots.append(g);
+    });
+
+    const labels = svg.querySelector('.names');
+    labels.replaceChildren();
+    // Each literal's name beside its disc: above the top one, below the two lower ones.
+    black.forEach((b, i) => {
+        const top = i === 0;
+        labels.append(el('text', {
+            x: top ? b.x + RHO + 10 : b.x,
+            y: top ? b.y - RHO * 0.55 : b.y + RHO + 18 * u,
+            'text-anchor': top ? 'start' : 'middle', 'font-size': 14 * u,
+        }, `${names[i]}: ${truth[i] ? 'true' : 'false'}`));
+    });
+
+    const done = stabbed(counts);
+    const status = placed.length > 2 ? 'over the budget of two' : done ? 'all four discs hold two: <b>the clause is satisfied</b>' : `${counts.filter((c) => c >= 2).length} of 4 discs hold two`;
+    root.querySelector('.readout').innerHTML = `<span class="sc">Extra points</span> <b>${placed.length}</b> of <b>2</b> <span class="sep">·</span> ${status}${note}`;
+}
+
+svg.addEventListener('click', (e) => {
+    const s = e.target.closest('.spot');
+    if (!s) return;
+    const r = Number(s.dataset.r);
+    const here = placed.filter((x) => x === r).length;
+    // Click adds a point here (up to two, they may coincide); a third click empties the spot.
+    placed = here >= 2 ? placed.filter((x) => x !== r) : [...placed, r];
+    note = '';
+    draw();
+});
+root.querySelector('button[name=clear]').addEventListener('click', () => {
+    placed = [];
+    note = '';
+    draw();
+});
+root.querySelector('button[name=search]').addEventListener('click', () => {
+    const sols = clauseSolutions(truth);
+    if (sols.length) {
+        placed = sols[0];
+        note = ` <span class="sep">·</span> ${sols.length} of the ${(REGIONS.length * (REGIONS.length + 1)) / 2} possible placements ${sols.length === 1 ? 'works' : 'work'}; here is one`;
+    } else {
+        placed = [];
+        note = ` <span class="sep">·</span> none of the ${(REGIONS.length * (REGIONS.length + 1)) / 2} possible placements works: <b>no true literal, no solution</b>`;
+    }
+    draw();
+});
+new ResizeObserver(() => draw()).observe(svg);
+draw();
+</script>

@@ -1,0 +1,44 @@
+<!-- Click-to-play game embed. Use: #figure(widget("game-embed", game-url: "https://kcentre.mc2.onl"), caption: [...])
+     The iframe is created only after a click, so nothing loads (no WebGL, no audio) until then.
+     On a phone-width screen only the link is shown. Settings arrive in root.dataset:
+     game-url -> root.dataset.gameUrl, height -> root.dataset.height (px, optional). -->
+<div class="game-frame" style="box-sizing:border-box;position:relative;width:100%;aspect-ratio:16/10;max-height:85vh;border:1px solid var(--rule);display:grid;place-items:center;text-align:center">
+    <button type="button" name="play">▶ Play the game here</button>
+    <a class="game-link" target="_blank" rel="noopener" style="display:none">Open the game ↗</a>
+</div>
+<p class="readout"><a class="game-link2" target="_blank" rel="noopener">Open the game in its own tab ↗</a></p>
+<script>
+const url = root.dataset.gameUrl || "https://kcentre.mc2.onl";
+const frame = root.querySelector(".game-frame");
+const play = root.querySelector("[name=play]");
+const link = root.querySelector(".game-link");
+root.querySelector(".game-link2").href = url;
+link.href = url;
+const narrow = window.matchMedia("(max-width: 700px)");
+function layout() {
+    if (frame.querySelector("iframe")) return;
+    play.style.display = narrow.matches ? "none" : "";
+    link.style.display = narrow.matches ? "inline" : "none";
+    if (narrow.matches) frame.style.aspectRatio = "auto", frame.style.padding = "1em";
+    else frame.style.aspectRatio = "16/10", frame.style.padding = "";
+}
+// Centre the frame on the page (not on its column): measure it unshifted, then slide it.
+function centre() {
+    frame.style.transform = "";
+    const r = frame.getBoundingClientRect();
+    const shift = document.documentElement.clientWidth / 2 - (r.left + r.width / 2);
+    frame.style.transform = narrow.matches ? "" : `translateX(${Math.round(shift)}px)`;
+}
+function update() { layout(); centre(); }
+narrow.addEventListener("change", update);
+window.addEventListener("resize", centre);
+update();
+play.addEventListener("click", () => {
+    const f = document.createElement("iframe");
+    f.src = url;
+    f.title = "Fault-tolerant k-centre game";
+    f.allow = "fullscreen";
+    f.style.cssText = "position:absolute;inset:0;width:100%;height:100%;border:0";
+    frame.replaceChildren(f);
+});
+</script>

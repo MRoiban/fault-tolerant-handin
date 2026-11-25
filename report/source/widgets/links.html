@@ -1,0 +1,19 @@
+<style>
+    .widget[data-widget="links"] .links { display: flex; flex-wrap: wrap; gap: 0.6em 1.8em; }
+    .widget[data-widget="links"] a {
+        font-family: var(--sc);
+        text-transform: lowercase;
+        letter-spacing: 0.03em;
+        color: var(--ink);
+        border-bottom: 0.5pt solid var(--rule);
+        padding-bottom: 1px;
+        text-decoration: none;
+    }
+    .widget[data-widget="links"] a:hover { border-bottom-color: var(--accent); color: var(--accent); }
+    .widget[data-widget="links"] a::after { content: " ↗"; color: var(--muted); font-family: var(--serif); }
+</style>
+<nav class="links" aria-label="Links">
+    <a href="https://github.com/MRoiban/fault-tolerant-handin" target="_blank" rel="noopener">Source code</a>
+    <a href="https://kcentre.mc2.onl" target="_blank" rel="noopener">Play the game</a>
+    <a href="https://cccg-wads-2025.eecs.yorku.ca/cccg-papers/5A3.pdf" target="_blank" rel="noopener">The paper</a>
+</nav>

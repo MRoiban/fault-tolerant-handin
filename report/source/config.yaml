@@ -1,0 +1,19 @@
+# Every setting of the document can live here; names follow incipit.with(...) in Typst.
+# A setting given in the document's #show: incipit.with(...) wins over this file.
+source: document.typ # the Typst file to build
+bibliography: refs.bib # BibTeX or Hayagriva; IEEE style with grouped citations
+
+title: Fault Tolerant K-centers
+kicker: Web Report · Computational geometry
+authors: [Marius-Alexandru Roiban]
+date: 2026-11-24
+
+colour: rubricated # or quiet
+seed: 237 # one number decides the accent, roles, stamps and initial
+roles: # words, and $symbols$ in Typst maths
+    client: [client, $n$, $p$, $P$]
+    facility: [facility, $k$, $F$]
+    tolerance: [$ell$]
+note-markers: stamps # numbers | symbols | stamps
+dropcap-style: historic # font | historic
+dropcap-colour: accent # auto | accent | ink
