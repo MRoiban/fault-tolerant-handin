@@ -239,3 +239,14 @@ We started with a simple question: can we place $k$ EV chargers in such a way th
 The paper @durocher2025 gives three answers. On a line, the problem can be solved optimally and fast, in $O(n log n)$. In the plane, it becomes NP-hard, already with $ell = 2$, through reduction from Planar 3-SAT to disc 2-stabbing. So instead of looking for an exact answer, the paper gives @alg-1. Which is never more than 2 times worse than the optimal solution.
 
 The game is made so that people who aren't familiar with the notation can build the intuition behind these results.
+
+= AI Use
+
+I used Claude Opus 5.5 (medium and high effort), through the T3 Code nightly harness.
+
+- *Implementation of code.* The algorithms are developed by me in pseudocode on my e-reader, then I send a screenshot of my writing to the model, which implements it.
+- *Understanding the concepts.* Claude was also used to help me better understand the concepts by creating interactive widgets.
+- *Iterative process for the game.* I would give Claude annotated drawings and have it make prototypes. From the one I liked, I started playtesting by giving the game to family and friends, and from their feedback I had the changes implemented.
+- *Incipit-web.* Incipit is my own custom-made template for Typst. Claude helped me create Incipit-web, a package that ports it to the web so I can write interactive documents.
+- *Fact-checking.* I also used AI to fact-check what I write against my sources, and to help me find logical errors in my writing.
+- *Interactive examples.* The interactive examples in this web report were made from schematics I drew.
